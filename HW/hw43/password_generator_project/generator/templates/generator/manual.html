@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <link rel="stylesheet" href="{% static 'css/style.css' %}">
+</head>
+<body>
+<div class="container">
+    <h1>Как пользоваться генератором</h1>
+    <div>
+        Для генерации пароля необходимо:
+        <ol>
+            <li>Выбрать длину пароля, для этого в выпадающем списке
+            выбрать кол-во символов.</li>
+            <li>Выбрать сложность пароля, для этого поставить галочку
+            с необходимыми параметрами.</li>
+            <li>Нажать на кнопку "Сгенерировать пароль".</li>
+        </ol>
+    </div>
+    <p><a href="{% url 'home' %}">Вернутся на главную</a></p>
+</div>
+</body>
+</html>
