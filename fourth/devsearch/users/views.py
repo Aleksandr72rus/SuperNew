@@ -1,9 +1,12 @@
 from django.shortcuts import render, redirect
-from .models import Profile
+from .models import Profile, Message
 from django.contrib.auth import logout, login, authenticate
 from django.contrib.auth.models import User
 from django.core.exceptions import ObjectDoesNotExist
 from django.contrib.auth.decorators import login_required
+from django.contrib import messages
+from .forms import CustomUserCreationForm, ProfileForm, SkillForm, MessageForm
+from .utils import search_profile, paginate_profiles
 
 
 def login_user(request):
@@ -17,7 +20,7 @@ def login_user(request):
         try:
             user = User.objects.get(username=username)
         except ObjectDoesNotExist:
-            print('Username Does Not Exist')
+            messages.error(request, 'Username Does Not Exist')
 
         user = authenticate(request, username=username, password=password)
 
@@ -25,20 +28,26 @@ def login_user(request):
             login(request, user)
             return redirect('profiles')
         else:
-            print("Username or Password is incorrect")
+            messages.error(request, "Username or Password is incorrect")
 
     return render(request, 'users/login_register.html')
 
 
 def logout_user(request):
     logout(request)
+    messages.info(request, "User was logges out!")
     return redirect('login')
 
 
 def profiles(request):
-    prof = Profile.objects.all()
+    prof, search_query = search_profile(request)
+
+    custom_range, prof = paginate_profiles(request, prof, 3)
+
     context = {
-        'profiles': prof
+        'profiles': prof,
+        'search_query': search_query,
+        'custom_range': custom_range,
     }
     return render(request, 'users/index.html', context)
 
@@ -57,3 +66,177 @@ def user_profile(request, pk):
     }
 
     return render(request, 'users/profile.html', context)
+
+
+def register_user(request):
+    page = 'register'
+    form = CustomUserCreationForm()
+
+    if request.method == "POST":
+        form = CustomUserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save(commit=False)
+            user.username = user.username.lower()
+            user.save()
+            messages.success(request, "User account was created")
+            login(request, user)
+            return redirect('profiles')
+        else:
+            messages.error(request, 'An error has occurred during registration')
+    context = {
+        'page': page,
+        'form': form,
+    }
+    return render(request, 'users/login_register.html', context)
+
+
+@login_required(login_url='login')
+def user_account(request):
+    prof = request.user.profile
+    skills = prof.skill_set.all()
+    projects = prof.project_set.all()
+
+    context = {
+        'profile': prof,
+        'skills': skills,
+        'projects': projects,
+    }
+    return render(request, 'users/account.html', context)
+
+
+@login_required(login_url='login')
+def edit_account(request):
+    profile = request.user.profile
+    form = ProfileForm(instance=profile)
+
+    if request.method == "POST":
+        form = ProfileForm(request.POST, request.FILES, instance=profile)
+        if form.is_valid():
+            form.save()
+
+            return redirect('account')
+
+    context = {
+        'form': form
+    }
+    return render(request, 'users/profile_form.html', context)
+
+
+@login_required(login_url='login')
+def create_skill(request):
+    profile = request.user.profile
+    form = SkillForm()
+
+    if request.method == "POST":
+        form = SkillForm(request.POST)
+        if form.is_valid():
+            skill = form.save(commit=False)
+            skill.owner = profile
+            skill.save()
+            messages.success(request, 'Skill was added successfully!')
+            return redirect('account')
+
+    context = {
+        'form': form
+    }
+
+    return render(request, 'users/skill_form.html', context)
+
+
+@login_required(login_url='login')
+def update_skill(request, pk):
+    profile = request.user.profile
+    skill = profile.skill_set.get(id=pk)
+    form = SkillForm(instance=skill)
+
+    if request.method == "POST":
+        form = SkillForm(request.POST, instance=skill)
+        if form.is_valid():
+            form.save()
+            messages.success(request, 'Skill was updated successfully!')
+            return redirect('account')
+
+    context = {
+        'form': form
+    }
+
+    return render(request, 'users/skill_form.html', context)
+
+
+@login_required(login_url='login')
+def delete_skill(request, pk):
+    profile = request.user.profile
+    skill = profile.skill_set.get(id=pk)
+
+    if request.method == "POST":
+        skill.delete()
+        messages.success(request, 'Skill was deleted successfully!')
+        return redirect('account')
+
+    context = {
+        'object': object
+    }
+    return render(request, 'users/delete.html', context)
+
+
+@login_required(login_url='login')
+def inbox(request):
+    profile = request.user.profile
+    message_requests = profile.messages.all()
+    unread_count = message_requests.filter(is_read=False).count()
+    context = {
+        'message_requests': message_requests,
+        'unread_count': unread_count
+    }
+    return render(request, 'users/inbox.html', context)
+
+
+@login_required(login_url='login')
+def view_message(request, pk):
+    profile = request.user.profile
+    message = profile.messages.get(id=pk)
+
+    # # if message.sender in profile:
+    # #     sender_register = profile.name
+    if message.is_read is False:
+        message.is_read = True
+        message.save()
+    context = {
+        'message': message,
+        # 'sender_register': sender_register
+    }
+    return render(request, 'users/message.html', context)
+
+
+def create_message(request, pk):
+    recipient = Profile.objects.get(id=pk)
+    form = MessageForm()
+
+    try:
+        sender = request.user.profile
+    except:
+        sender = None
+
+    if request.method == "POST":
+        form = MessageForm(request.POST)
+        if form.is_valid():
+            message = form.save(commit=False)
+            message.sender = sender
+            message.recipient = recipient
+
+            if sender:
+                message.name = sender.name
+                message.email = sender.email
+            message.save()
+
+            messages.success(request, "Your message was successfully sent!")
+            return redirect('user_profile', pk=recipient.id)
+
+    context = {
+        'recipient': recipient,
+        'form': form
+    }
+    return render(request, 'users/message_form.html', context)
+
+
+
